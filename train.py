@@ -10,6 +10,10 @@ import torch.optim as optim
 from tensorboardX import SummaryWriter
 import options as opt
 from tqdm import tqdm
+from datasets import load_dataset
+
+dataset = load_dataset("wissemkarous/lipreading")
+
 
 
 def dataset2dataloader(dataset, num_workers=opt.num_workers, shuffle=True):
@@ -58,11 +62,11 @@ def test(model, net):
         print("RUNNING VALIDATION")
         pbar = tqdm(loader)
         for i_iter, input in enumerate(pbar):
-            vid = input.get("vid").cuda(non_blocking=opt.pin_memory)
-            txt = input.get("txt").cuda(non_blocking=opt.pin_memory)
-            vid_len = input.get("vid_len").cuda(non_blocking=opt.pin_memory)
-            txt_len = input.get("txt_len").cuda(non_blocking=opt.pin_memory)
-            coord = input.get("coord").cuda(non_blocking=opt.pin_memory)
+            vid = input.get("vid").cpu(non_blocking=opt.pin_memory)
+            txt = input.get("txt").cpu(non_blocking=opt.pin_memory)
+            vid_len = input.get("vid_len").cpu(non_blocking=opt.pin_memory)
+            txt_len = input.get("txt_len").cpu(non_blocking=opt.pin_memory)
+            coord = input.get("coord").cpu(non_blocking=opt.pin_memory)
 
             y = net(vid, coord)
 
@@ -130,11 +134,11 @@ def train(model, net):
 
         for i_iter, input in enumerate(pbar):
             model.train()
-            vid = input.get("vid").cuda(non_blocking=opt.pin_memory)
-            txt = input.get("txt").cuda(non_blocking=opt.pin_memory)
-            vid_len = input.get("vid_len").cuda(non_blocking=opt.pin_memory)
-            txt_len = input.get("txt_len").cuda(non_blocking=opt.pin_memory)
-            coord = input.get("coord").cuda(non_blocking=opt.pin_memory)
+            vid = input.get("vid").cpu(non_blocking=opt.pin_memory)
+            txt = input.get("txt").cpu(non_blocking=opt.pin_memory)
+            vid_len = input.get("vid_len").cpu(non_blocking=opt.pin_memory)
+            txt_len = input.get("txt_len").cpu(non_blocking=opt.pin_memory)
+            coord = input.get("coord").cpu(non_blocking=opt.pin_memory)
 
             optimizer.zero_grad()
             y = net(vid, coord)
@@ -199,39 +203,40 @@ def train(model, net):
 
 if __name__ == "__main__":
     print("Loading options...")
-    os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu
     writer = SummaryWriter()
     model = LipCoordNet()
-    model = model.cuda()
-    net = nn.DataParallel(model).cuda()
 
-    if hasattr(opt, "weights"):
-        pretrained_dict = torch.load(opt.weights)
-        model_dict = model.state_dict()
-        pretrained_dict = {
-            k: v
-            for k, v in pretrained_dict.items()
-            if k in model_dict.keys() and v.size() == model_dict[k].size()
-        }
+    # Si quieres usar CPU en lugar de GPU, modifica la asignación del modelo
+    model = model.cpu()
+    net = nn.DataParallel(model).cpu()
 
-        # freeze the pretrained layers
-        for k, param in pretrained_dict.items():
-            param.requires_grad = False
+    # Cargar pesos preentrenados opcionalmente, si existen
+    # if hasattr(opt, "weights") and os.path.exists(opt.weights):
+    #     pretrained_dict = torch.load(opt.weights, map_location=torch.device('cpu'))
+    #     model_dict = model.state_dict()
+    #     pretrained_dict = {
+    #         k: v
+    #         for k, v in pretrained_dict.items()
+    #         if k in model_dict.keys() and v.size() == model_dict[k].size()
+    #     }
 
-        missed_params = [
-            k for k, v in model_dict.items() if not k in pretrained_dict.keys()
-        ]
-        print(
-            "loaded params/tot params:{}/{}".format(
-                len(pretrained_dict), len(model_dict)
-            )
-        )
-        print("miss matched params:{}".format(missed_params))
-        model_dict.update(pretrained_dict)
-        model.load_state_dict(model_dict)
+    #     # Congelar las capas preentrenadas si es necesario
+    #     for k, param in pretrained_dict.items():
+    #         param.requires_grad = False
+
+    #     missed_params = [
+    #         k for k, v in model_dict.items() if not k in pretrained_dict.keys()
+    #     ]
+    #     print(
+    #         "loaded params/tot params:{}/{}".format(
+    #             len(pretrained_dict), len(model_dict)
+    #         )
+    #     )
+    #     print("miss matched params:{}".format(missed_params))
+    #     model_dict.update(pretrained_dict)
+    #     model.load_state_dict(model_dict)
+
+    # Si prefieres entrenar desde cero, comenta las líneas de carga de pesos preentrenados
 
     torch.manual_seed(opt.random_seed)
-    torch.cuda.manual_seed_all(opt.random_seed)
-    torch.backends.cudnn.benchmark = True
-
     train(model, net)
